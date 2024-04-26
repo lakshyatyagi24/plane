@@ -79,6 +79,7 @@ const DocumentEditor = (props: IDocumentEditor) => {
       setHideDragHandle: setHideDragHandleFunction,
     }),
     placeholder,
+    tabIndex,
   });
 
   const editorContainerClassNames = getEditorClassNames({

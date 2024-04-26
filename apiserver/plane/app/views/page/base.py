@@ -2,6 +2,7 @@
 import json
 import base64
 from datetime import datetime
+from django.core.serializers.json import DjangoJSONEncoder
 
 # Django imports
 from django.db import connection
@@ -146,6 +147,7 @@ class PageViewSet(BaseViewSet):
             serializer = PageDetailSerializer(
                 page, data=request.data, partial=True
             )
+            page_description = page.description_html
             if serializer.is_valid():
                 serializer.save()
                 # capture the page transaction
@@ -154,11 +156,13 @@ class PageViewSet(BaseViewSet):
                         new_value=request.data,
                         old_value=json.dumps(
                             {
-                                "description_html": page.description_html,
-                            }
+                                "description_html": page_description,
+                            },
+                            cls=DjangoJSONEncoder,
                         ),
                         page_id=pk,
                     )
+
                 return Response(serializer.data, status=status.HTTP_200_OK)
             return Response(
                 serializer.errors, status=status.HTTP_400_BAD_REQUEST
@@ -173,9 +177,15 @@ class PageViewSet(BaseViewSet):
 
     def retrieve(self, request, slug, project_id, pk=None):
         page = self.get_queryset().filter(pk=pk).first()
-        return Response(
-            PageDetailSerializer(page).data, status=status.HTTP_200_OK
-        )
+        if page is None:
+            return Response(
+                {"error": "Page not found"},
+                status=status.HTTP_404_NOT_FOUND,
+            )
+        else:
+            return Response(
+                PageDetailSerializer(page).data, status=status.HTTP_200_OK
+            )
 
     def lock(self, request, slug, project_id, pk):
         page = Page.objects.filter(
