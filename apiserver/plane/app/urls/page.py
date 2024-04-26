@@ -84,8 +84,7 @@ urlpatterns = [
         "workspaces/<str:slug>/projects/<uuid:project_id>/pages/<uuid:pk>/description/",
         PagesDescriptionViewSet.as_view(
             {
-                "get": "retrieve",
-                "patch": "partial_update",
+                "post": "create",
             }
         ),
         name="page-description",

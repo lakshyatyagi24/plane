@@ -6,15 +6,18 @@ from django.core.serializers.json import DjangoJSONEncoder
 
 # Django imports
 from django.db import connection
+from django.conf import settings
 from django.db.models import Exists, OuterRef, Q
 from django.utils.decorators import method_decorator
 from django.views.decorators.gzip import gzip_page
-from django.http import StreamingHttpResponse, HttpResponse
+from django.http import StreamingHttpResponse
 
 
 # Third party imports
 from rest_framework import status
 from rest_framework.response import Response
+from rest_framework.permissions import AllowAny
+from rest_framework.exceptions import AuthenticationFailed
 
 
 from plane.app.permissions import ProjectEntityPermission
@@ -303,15 +306,40 @@ class PageViewSet(BaseViewSet):
 
 
 class PagesDescriptionViewSet(BaseViewSet):
-    # parser_classes = [FileUploadParser]
-    def retrieve(self, request, slug, project_id, pk):
+    permission_classes = [
+        AllowAny,
+    ]
+
+    def create(self, request, slug, project_id, pk):
+        secret = request.headers.get("X-Yjs-Secret")
+        if secret != settings.YJS_WEBHOOK_SECRET:
+            raise AuthenticationFailed("Invalid secret")
+
         page = Page.objects.get(
             pk=pk, workspace__slug=slug, project_id=project_id
         )
-        binary_data = page.description_yjs
+        description_html = request.data.get("description_html")
+        base64_data = request.data.get("description_yjs", None)
+        page_description = page.description_html
+        if base64_data:
+            binary_data = base64.b64decode(base64_data)
+            page.description_yjs = binary_data
+            page.description_html = description_html
+            page.save()
+            # capture the page transaction
+            if request.data.get("description_html"):
+                page_transaction.delay(
+                    new_value=request.data,
+                    old_value=json.dumps(
+                        {
+                            "description_html": page_description,
+                        }
+                    ),
+                    page_id=pk,
+                )
 
         def stream_data():
-            yield binary_data
+            yield page.description_yjs
 
         response = StreamingHttpResponse(
             stream_data(), content_type="application/octet-stream"
@@ -320,20 +348,6 @@ class PagesDescriptionViewSet(BaseViewSet):
             'attachment; filename="page_description.bin"'
         )
         return response
-
-    def partial_update(self, request, slug, project_id, pk):
-        page = Page.objects.get(
-            pk=pk, workspace__slug=slug, project_id=project_id
-        )
-        base64_data = request.data.get("description_yjs")
-
-        if base64_data:
-            binary_data = base64.b64decode(base64_data)
-            page.description_yjs = binary_data
-            page.save()
-            return Response({"message": "Updated successfully"})
-        else:
-            return Response({"error": "No binary data provided"})
 
 
 class PageFavoriteViewSet(BaseViewSet):
